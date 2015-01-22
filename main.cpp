@@ -5,17 +5,18 @@
 #include "model.h"
 #include "geometry.h"
 
-const TGAColor white = TGAColor(255, 255, 255, 255);
-const TGAColor red   = TGAColor(255, 0,   0,   255);
-const TGAColor green = TGAColor(0,   255, 0,   255);
-const TGAColor blue  = TGAColor(0,   0,   255, 255);
+const TGAColor white  = TGAColor(255, 255, 255, 255);
+const TGAColor red    = TGAColor(255, 0,   0,   255);
+const TGAColor green  = TGAColor(0,   255, 0,   255);
+const TGAColor blue   = TGAColor(0,   0,   255, 255);
+const TGAColor yellow = TGAColor(255, 255, 0,   255);
 
 Model *model = NULL;
-const int width  = 800;
-const int height = 800;
+const int width  = 100;
+const int height = 100;
 const int depth  = 255;
 
-void line(Vec3f p0, Vec3f p1, TGAImage &image, TGAColor color) {
+void line(Vec3i p0, Vec3i p1, TGAImage &image, TGAColor color) {
     bool steep = false;
     if (std::abs(p0.x-p1.x)<std::abs(p0.y-p1.y)) {
         std::swap(p0.x, p0.y);
@@ -28,7 +29,7 @@ void line(Vec3f p0, Vec3f p1, TGAImage &image, TGAColor color) {
 
     for (int x=p0.x; x<=p1.x; x++) {
         float t = (x-p0.x)/(float)(p1.x-p0.x);
-        int y = p0.y*(1.-t) + p1.y*t+.5f;
+        int y = p0.y*(1.-t) + p1.y*t+.5;
         if (steep) {
             image.set(y, x, color);
         } else {
@@ -40,6 +41,7 @@ void line(Vec3f p0, Vec3f p1, TGAImage &image, TGAColor color) {
 Vec3f m2v(Matrix m) {
     return Vec3f(m[0][0]/m[3][0], m[1][0]/m[3][0], m[2][0]/m[3][0]);
 }
+
 Matrix v2m(Vec3f v) {
     Matrix m(4, 1);
     m[0][0] = v.x;
@@ -133,12 +135,16 @@ int main(int argc, char** argv) {
                 line(sp0, sp1, image, white);
             }
             { // draw the deformed model
-                Matrix T = translation(Vec3f(.33, .5, 0))*rotation_z(cos(10.*M_PI/180.), sin(10.*M_PI/180.));
+                Matrix T = zoom(1.5);
+//                  Matrix T = Matrix::identity(4);
+//                  T[0][1] = 0.333;
+//                Matrix T = translation(Vec3f(.33, .5, 0))*rotation_z(cos(10.*M_PI/180.), sin(10.*M_PI/180.));
                 Vec3f sp0 = m2v(VP*T*v2m(wp0));
                 Vec3f sp1 = m2v(VP*T*v2m(wp1));
-                line(sp0, sp1, image, blue);
+                line(sp0, sp1, image, yellow);
             }
         }
+        break;
     }
 
 
