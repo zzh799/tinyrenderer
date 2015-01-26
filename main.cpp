@@ -3,6 +3,7 @@
 #include "tgaimage.h"
 #include "model.h"
 #include "geometry.h"
+#include "vec-simple.h"
 #include "our_gl.h"
 
 const int width  = 800;
@@ -22,7 +23,7 @@ struct Shader : public IShader {
         varying_inty[nthvert] = model->normal(iface, nthvert)*light_dir;
         varying_uv[nthvert]   = model->uv(iface, nthvert);
         Vec3f gl_Vertex = model->vert(iface, nthvert);
-        Vec3f gl_Position = proj<3>(Viewport*dive<4>(gl_Vertex));//Projection*ModelView*Matrix(gl_Vertex);
+        Vec3f gl_Position = proj<3>(Viewport*embed<4>(gl_Vertex));//Projection*ModelView*Matrix(gl_Vertex);
 //        std::cerr << gl_Position<<"\n";
 //        std::terminate();
         return (Vec3i){static_cast<int>(gl_Position[0]),static_cast<int>(gl_Position[1]),static_cast<int>(gl_Position[2])};
