@@ -1,90 +1,100 @@
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+#include <string>
 #include <limits>
 #include <iostream>
 #include "tgaimage.h"
-#include "model.h"
 #include "geometry.h"
-#include "our_gl.h"
-
-Model *model        = NULL;
 
 const int width  = 800;
 const int height = 800;
+const TGAColor white(255, 255, 255, 255);
+Vec3f light_dir(0,0,-1);
 
-Vec3f light_dir(1,1,1);
-Vec3f       eye(1,1,3);
-Vec3f    center(0,0,0);
-Vec3f        up(0,1,0);
+std::vector<Vec3f> verts;
+std::vector<std::vector<int> > faces;
 
-struct Shader : public IShader {
-    mat<2,3,float> varying_uv;  // triangle uv coordinates, written by the vertex shader, read by the fragment shader
-    mat<4,3,float> varying_tri; // triangle coordinates (clip coordinates), written by VS, read by FS
-    mat<3,3,float> varying_nrm; // normal per vertex to be interpolated by FS
-
-    virtual Vec4f vertex(int iface, int nthvert) {
-        varying_uv.set_col(nthvert, model->uv(iface, nthvert));
-        varying_nrm.set_col(nthvert, proj<3>((Projection*ModelView).invert_transpose()*embed<4>(model->normal(iface, nthvert), 0.f)));
-        Vec4f gl_Vertex = Projection*ModelView*embed<4>(model->vert(iface, nthvert));
-        varying_tri.set_col(nthvert, gl_Vertex);
-        return gl_Vertex;
-    }
-
-    virtual bool fragment(Vec3f bar, TGAColor &color) {
-        Vec3f bn = (varying_nrm*bar).normalize();
-        Vec2f uv = varying_uv*bar;
-        mat<3,3,float> ndc_tri; // column-vectors
-        for (int i=0; i<3; i++) ndc_tri.set_col(i, proj<3>(varying_tri.col(i)/varying_tri.col(i)[3]));
-        mat<3,3,float> A;
-        A[0] = ndc_tri.col(1)-ndc_tri.col(0);
-        A[1] = ndc_tri.col(2)-ndc_tri.col(0);
-        A[2] = bn;
-        A = A.invert();
-        Vec3f bu = A*Vec3f(varying_uv[0][1]-varying_uv[0][0], varying_uv[0][2]-varying_uv[0][0], 0);
-        Vec3f bv = A*Vec3f(varying_uv[1][1]-varying_uv[1][0], varying_uv[1][2]-varying_uv[1][0], 0);
-        mat<3,3,float> B;
-        B.set_col(0, bu.normalize());
-        B.set_col(1, bv.normalize());
-        B.set_col(2, bn);
-
-        Vec3f n = (B*model->normal(uv)).normalize();
-
-        float diff = std::max(0.f, n*light_dir);
-//        color = model->diffuse(uv)*diff;
-        color = TGAColor(255, 255, 255)*diff;
-        return false;
-    }
-};
-
-int main(int argc, char** argv) {
-    if (2>argc) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
-        return 1;
-    }
-
-    float *zbuffer = new float[width*height];
-    for (int i=width*height; i--; zbuffer[i] = -std::numeric_limits<float>::max());
-
-    TGAImage frame(width, height, TGAImage::RGB);
-    lookat(eye, center, up);
-    viewport(width/8, height/8, width*3/4, height*3/4);
-    projection(-1.f/(eye-center).norm());
-    light_dir = proj<3>((Projection*ModelView*embed<4>(light_dir, 0.f))).normalize();
-
-    for (int m=1; m<argc; m++) {
-        model = new Model(argv[m]);
-        Shader shader;
-        for (int i=0; i<model->nfaces(); i++) {
-            for (int j=0; j<3; j++) {
-                shader.vertex(i, j);
+void load_obj(const char *filename) {
+    std::ifstream in;
+    in.open (filename, std::ifstream::in);
+    if (in.fail()) return;
+    std::string line;
+    while (!in.eof()) {
+        std::getline(in, line);
+        std::istringstream iss(line.c_str());
+        char trash;
+        if (!line.compare(0, 2, "v ")) {
+            iss >> trash;
+            Vec3f v;
+            for (int i=0;i<3;i++) iss >> v[i];
+            verts.push_back(v);
+        } else if (!line.compare(0, 2, "f ")) {
+            std::vector<int> f;
+            int idx;
+            iss >> trash;
+            while (iss >> idx) {
+                idx--; // in wavefront obj all indices start at 1, not zero
+                f.push_back(idx);
             }
-            triangle(shader.varying_tri, shader, frame, zbuffer);
+            faces.push_back(f);
         }
-        delete model;
     }
-    frame.flip_vertically(); // to place the origin in the bottom left corner of the image
-    frame.write_tga_file("framebuffer.tga");
+    std::cerr << "# v# " << verts.size() << " f# "  << faces.size() << std::endl;
+}
 
-    delete [] zbuffer;
+Vec3f barycentric(Vec2i *pts, Vec2i P) {
+    Vec3f u = cross(Vec3f(pts[2][0]-pts[0][0], pts[1][0]-pts[0][0], pts[0][0]-P[0]), Vec3f(pts[2][1]-pts[0][1], pts[1][1]-pts[0][1], pts[0][1]-P[1]));
+    if (std::abs(u[2])<1) return Vec3f(-1,1,1); // triangle is degenerate, in this case return smth with negative coordinates
+    return Vec3f(1.f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z);
+}
+
+void triangle(Vec2i *pts, TGAImage &image, TGAColor color) {
+    Vec2i bboxmin(image.get_width()-1,  image.get_height()-1);
+    Vec2i bboxmax(0, 0);
+    Vec2i clamp(image.get_width()-1, image.get_height()-1);
+    for (int i=0; i<3; i++) {
+        for (int j=0; j<2; j++) {
+            bboxmin[j] = std::max(0,        std::min(bboxmin[j], pts[i][j]));
+            bboxmax[j] = std::min(clamp[j], std::max(bboxmax[j], pts[i][j]));
+        }
+    }
+    Vec2i P;
+    for (P.x=bboxmin.x; P.x<=bboxmax.x; P.x++) {
+        for (P.y=bboxmin.y; P.y<=bboxmax.y; P.y++) {
+            Vec3f bc_screen  = barycentric(pts, P);
+            if (bc_screen.x<0 || bc_screen.y<0 || bc_screen.z<0) continue;
+            image.set(P.x, P.y, color);
+        }
+    }
+}
+
+
+int main() {
+    load_obj("face.obj");
+    TGAImage frame(width, height, TGAImage::RGB);
+
+    for (unsigned int i=0; i<faces.size(); i++) {
+        std::vector<int> &face = faces[i];
+        Vec2i screen_coords[3];
+        Vec3f world_coords[3];
+
+        for (int j=0; j<3; j++) {
+            world_coords[j]  = verts[face[j]];
+            screen_coords[j] = Vec2i((world_coords[j].x+1.)*width/2., (world_coords[j].y+1.)*height/2.);
+        }
+
+        Vec3f n = cross(world_coords[2]-world_coords[0], world_coords[1]-world_coords[0]);
+        n.normalize();
+        float intensity = n*light_dir;
+        if (intensity>0) {
+            triangle(screen_coords, frame, white*intensity);
+        }
+    }
+
+    frame.flip_vertically();
+    frame.write_tga_file("framebuffer.tga");
     return 0;
 }
 
