@@ -141,7 +141,7 @@ bool TGAImage::load_rle_data(std::ifstream &in) {
     return true;
 }
 
-bool TGAImage::write_tga_file(const char *filename, bool rle) {
+bool TGAImage::write_tga_file(const char *filename, bool topleft, bool rle) {
     unsigned char developer_area_ref[4] = {0, 0, 0, 0};
     unsigned char extension_area_ref[4] = {0, 0, 0, 0};
     unsigned char footer[18] = {'T','R','U','E','V','I','S','I','O','N','-','X','F','I','L','E','.','\0'};
@@ -158,7 +158,9 @@ bool TGAImage::write_tga_file(const char *filename, bool rle) {
     header.width  = width;
     header.height = height;
     header.datatypecode = (bytespp==GRAYSCALE?(rle?11:3):(rle?10:2));
-    header.imagedescriptor = 0x20; // top-left origin
+    if (topleft) {
+        header.imagedescriptor = 0x20; // top-left origin
+    }
     out.write((char *)&header, sizeof(header));
     if (!out.good()) {
         out.close();

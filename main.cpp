@@ -5,13 +5,12 @@
 #include <string>
 #include <limits>
 #include <iostream>
-#include "tgaimage.h"
-#include "geometry.h"
 
 #include <Eigen/IterativeLinearSolvers>
 #include <Eigen/SparseCore>
 
-
+#include "tgaimage.h"
+#include "geometry.h"
 
 const int width  = 800;
 const int height = 800;
@@ -23,6 +22,7 @@ std::vector<Vec3f> verts;
 std::vector<std::vector<int> > faces;
 std::vector<bool> border;
 
+// fills the border array, verts and faces are supposed to be already loaded (see load_obj())
 void find_border_verts() {
     border = std::vector<bool>(verts.size(), false);
     std::vector<std::vector<int> > adj(verts.size());
@@ -32,7 +32,7 @@ void find_border_verts() {
         }
     }
     for (int i=0; i<(int)verts.size(); i++) {
-        for (int j=0; j<(int)adj[i].size(); j++) {
+        for (int j=0; j<(int)adj[i].size(); j++) { // loop through all faces incident to the vertex i and search for a halfedge without an opposite
             bool flag = false;
             int v1 = faces[adj[i][j]/3][(adj[i][j]%3 + 1)%3];
             for (int k=0; k<(int)adj[i].size(); k++) {
@@ -42,7 +42,7 @@ void find_border_verts() {
                     break;
                 }
             }
-            if (flag==false) {
+            if (!flag) {
                 border[i] = true;
                 break;
             }
@@ -50,6 +50,7 @@ void find_border_verts() {
     }
 }
 
+// fills verts and faces arrays, supposes .obj file to have "f " entries without slashes
 void load_obj(const char *filename) {
     std::ifstream in;
     in.open (filename, std::ifstream::in);
@@ -75,39 +76,39 @@ void load_obj(const char *filename) {
             faces.push_back(f);
         }
     }
-
     std::cerr << "# v# " << verts.size() << " f# "  << faces.size() << std::endl;
 }
 
-
+// well, a line is a line, no tricks here
 void line(Vec2i a, Vec2i b, TGAImage &image, TGAColor color) {
     bool steep = false;
-    if (std::abs(a.x-b.x)<std::abs(a.y-b.y)) { // if the line is steep, we transpose the image
+    if (std::abs(a.x-b.x)<std::abs(a.y-b.y)) {
         std::swap(a.x, a.y);
         std::swap(b.x, b.y);
         steep = true;
     }
-    if (a.x>b.x) { // make it left−to−right
+    if (a.x>b.x) {
         std::swap(a, b);
     }
     for (int x=a.x; x<=b.x; x++) {
         float t = (x-a.x)/(float)(b.x-a.x);
         int y = a.y*(1.-t) + b.y*t;
         if (steep) {
-            image.set(y, x, color); // if transposed, de−transpose
+            image.set(y, x, color);
         } else {
             image.set(x, y, color);
         }
     }
 }
 
-
+// given a pts triangle and a point P, find barycentric coordinates of P wrt to pts
 Vec3f barycentric(Vec2i *pts, Vec2i P) {
     Vec3f u = cross(Vec3f(pts[2][0]-pts[0][0], pts[1][0]-pts[0][0], pts[0][0]-P[0]), Vec3f(pts[2][1]-pts[0][1], pts[1][1]-pts[0][1], pts[0][1]-P[1]));
     if (std::abs(u[2])<1) return Vec3f(-1,1,1); // triangle is degenerate, in this case return smth with negative coordinates
     return Vec3f(1.f-(u.x+u.y)/u.z, u.y/u.z, u.x/u.z);
 }
 
+// triangle rasterizer with clamping to the screen size
 void triangle(Vec2i *pts, TGAImage &image, TGAColor color) {
     Vec2i bboxmin(image.get_width()-1,  image.get_height()-1);
     Vec2i bboxmax(0, 0);
@@ -128,7 +129,6 @@ void triangle(Vec2i *pts, TGAImage &image, TGAColor color) {
     }
 }
 
-
 int main() {
     load_obj("face.obj");
     find_border_verts();
@@ -136,6 +136,7 @@ int main() {
 
     std::vector<Vec3f> orig_verts = verts;
 
+    // this loop smoothes the mesh separately for x, y and z dimensions
     for (int d=0; d<3; d++) {
         int n = verts.size();
         int m = n + faces.size()*3;
@@ -143,7 +144,8 @@ int main() {
         Eigen::VectorXd X(n), B(m);
 
         for (int i=0; i<n; i++) {
-            float scale = 1;//border[i] ? 100 : 1;
+            float scale = 1; //border[i] ? 100 : 1;
+
             A.coeffRef(i,i) = 1*scale;
             B(i) = verts[i][d]*scale;
         }
@@ -164,7 +166,7 @@ int main() {
         }
     }
 
-
+    // draw boundary of the original mesh
     for (unsigned int i=0; i<faces.size(); i++) {
         std::vector<int> &face = faces[i];
         Vec2i screen_coords[3];
@@ -181,6 +183,7 @@ int main() {
         }
     }
 
+    // draw smoothed mesh
     for (unsigned int i=0; i<faces.size(); i++) {
         std::vector<int> &face = faces[i];
         Vec2i screen_coords[3];
@@ -199,8 +202,7 @@ int main() {
         }
     }
 
-    frame.flip_vertically();
-    frame.write_tga_file("framebuffer.tga");
+    frame.write_tga_file("framebuffer.tga", false);
     return 0;
 }
 
