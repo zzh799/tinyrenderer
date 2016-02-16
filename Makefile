@@ -1,5 +1,5 @@
 SYSCONF_LINK = g++
-CPPFLAGS     = -g -Wall -Wextra -Weffc++ -pedantic -std=c++98 `pkg-config --cflags eigen3`
+CPPFLAGS     = -g -Wall -Wextra -Weffc++ -pedantic -std=c++98
 LDFLAGS      = -O3
 LIBS         = -lm
 

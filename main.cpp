@@ -6,9 +6,7 @@
 #include <limits>
 #include <iostream>
 
-#include <Eigen/IterativeLinearSolvers>
-#include <Eigen/SparseCore>
-
+#include "OpenNL_psm.h"
 #include "tgaimage.h"
 #include "geometry.h"
 
@@ -138,31 +136,37 @@ int main() {
 
     // this loop smoothes the mesh separately for x, y and z dimensions
     for (int d=0; d<3; d++) {
-        int n = verts.size();
-        int m = n + faces.size()*3;
-        Eigen::SparseMatrix<double,Eigen::RowMajor> A(m,n);
-        Eigen::VectorXd X(n), B(m);
+        nlNewContext();
+        nlSolverParameteri(NL_NB_VARIABLES, verts.size());
+        nlSolverParameteri(NL_LEAST_SQUARES, NL_TRUE);
+        nlBegin(NL_SYSTEM);
+        nlBegin(NL_MATRIX);
 
-        for (int i=0; i<n; i++) {
+        for (int i=0; i<(int)verts.size(); i++) {
             float scale = 1; //border[i] ? 100 : 1;
-
-            A.coeffRef(i,i) = 1*scale;
-            B(i) = verts[i][d]*scale;
+            nlBegin(NL_ROW);
+            nlCoefficient(i, 1);
+            nlRightHandSide(verts[i][d]);
+            nlScaleRow(scale);
+            nlEnd(NL_ROW);
         }
+
         for (unsigned int i=0; i<faces.size(); i++) {
             std::vector<int> &face = faces[i];
             for (int j=0; j<3; j++) {
-                A.coeffRef(n+i*3+j, face[ j     ]) =  1;
-                A.coeffRef(n+i*3+j, face[(j+1)%3]) = -1;
-                B(n+i*3+j) = 0;
+                nlBegin(NL_ROW);
+                nlCoefficient(face[ j     ],  1);
+                nlCoefficient(face[(j+1)%3], -1);
+                nlEnd(NL_ROW);
             }
         }
 
-        Eigen::LeastSquaresConjugateGradient<Eigen::SparseMatrix<double,Eigen::RowMajor>, Eigen::IdentityPreconditioner > lscg;
-        lscg.compute(A);
-        X = lscg.solve(B);
-        for (int i=0; i<n; i++) {
-            verts[i][d] = X(i);
+        nlEnd(NL_MATRIX);
+        nlEnd(NL_SYSTEM);
+        nlSolve();
+
+        for (int i=0; i<(int)verts.size(); i++) {
+            verts[i][d] = nlGetVariable(i);
         }
     }
 
