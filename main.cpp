@@ -143,7 +143,7 @@ int main() {
         nlBegin(NL_MATRIX);
 
         for (int i=0; i<(int)verts.size(); i++) {
-            float scale = 1; //border[i] ? 100 : 1;
+            float scale = border[i] ? 100 : 1;
             nlBegin(NL_ROW);
             nlCoefficient(i, 1);
             nlRightHandSide(verts[i][d]);
